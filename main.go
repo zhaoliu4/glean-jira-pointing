@@ -93,14 +93,14 @@ func getJiraClient(jiraToken string) *jira.Client {
 
 func getGleanClient(gleanToken string) *glean.Glean {
 	client := &http.Client{
-		Timeout: 600 * time.Second,
+		Timeout: 900 * time.Second,
 	}
 
 	s := glean.New(
 		glean.WithSecurity(gleanToken),
 		glean.WithInstance(gleanInstance),
 		glean.WithClient(client),
-		glean.WithTimeout(600*time.Second),
+		glean.WithTimeout(900*time.Second),
 	)
 	return s
 }
