@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/andygrunwald/go-jira"
@@ -24,6 +26,8 @@ const (
 	gleanTokenKey = "GLEAN_TOKEN"
 	gleanInstance = "happyreturns"
 	gleanAgentID  = "0ac7bf1977574596a4a3ea410e364d4c"
+
+	completedTicketsFile = "completed_tickets.txt"
 )
 
 func main() {
@@ -49,6 +53,13 @@ func main() {
 	jiraClient := getJiraClient(jiraToken)
 	gleanClient := getGleanClient(gleanToken)
 
+	// Load the list of completed tickets so we don't process them again
+	completedTickets, err := getCompletedTickets()
+	if err != nil {
+		log.Fatalf("Error getting completed tickets: %v", err)
+	}
+	log.Printf("Completed tickets: %v", completedTickets)
+
 	ctx := context.Background()
 
 	jql := fmt.Sprintf("status = 'To Do' AND Sprint = '%s' AND Flagged is EMPTY", jiraSprint)
@@ -58,11 +69,16 @@ func main() {
 	}
 
 	for _, issue := range issues {
+		if _, ok := completedTickets[issue.Key]; ok {
+			log.Printf("Skipping completed ticket: %s", issue.Key)
+			continue
+		}
+
 		issueLink := fmt.Sprintf("%s%s", jiraTicketURLPrefix, issue.Key)
 		log.Printf("Processing issue: %s", issueLink)
 
 		// Glean seems to have rate limit over agent usage, so we might need to add a sleep here
-		// time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
 		comments, err := getCleanPointingComments(ctx, gleanClient, issueLink)
 		if err != nil {
 			log.Fatalf("Error getting clean pointing comments: %v", err)
@@ -74,8 +90,51 @@ func main() {
 				log.Printf("Error posting Jira comment: %v", err)
 			}
 		}
+
+		err = saveCompletedTickets(issue.Key)
+		if err != nil {
+			log.Printf("Error saving completed ticket %s: %v", issue.Key, err)
+		}
 	}
 	log.Printf("Done")
+}
+
+func getCompletedTickets() (map[string]struct{}, error) {
+	completedTickets := make(map[string]struct{})
+
+	file, err := os.Open(completedTicketsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			completedTickets[line] = struct{}{}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return completedTickets, nil
+}
+
+func saveCompletedTickets(key string) error {
+	file, err := os.OpenFile(completedTicketsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(key + "\n")
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func getJiraClient(jiraToken string) *jira.Client {
