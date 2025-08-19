@@ -91,6 +91,11 @@ func main() {
 			}
 		}
 
+		err = updateAIEstimatedField(jiraClient, issue.Key)
+		if err != nil {
+			log.Printf("Error updating AI Estimated field: %v", err)
+		}
+
 		err = saveCompletedTickets(issue.Key)
 		if err != nil {
 			log.Printf("Error saving completed ticket %s: %v", issue.Key, err)
@@ -176,6 +181,28 @@ func postJiraComment(jiraClient *jira.Client, issueID string, comment string) er
 	_, _, err := jiraClient.Issue.AddComment(issueID, &jira.Comment{
 		Body: comment,
 	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// updateAIEstimatedField updates the AI Estimated customfield (customfield_11728) for a given issue
+func updateAIEstimatedField(jiraClient *jira.Client, issueID string) error {
+	// Create the issue update structure
+	issue := &jira.Issue{
+		Key: issueID,
+		Fields: &jira.IssueFields{
+			Unknowns: map[string]interface{}{
+				"customfield_11728": map[string]interface{}{
+					"value": "AI Estimated ",
+				},
+			},
+		},
+	}
+
+	// Update the issue
+	_, _, err := jiraClient.Issue.Update(issue)
 	if err != nil {
 		return err
 	}
